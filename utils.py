@@ -7,15 +7,16 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Configure Google Gemini API
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-
 def generate_legal_document(doc_type, parties_involved, terms_conditions, effective_date):
     """
     Generates a legal document using Google Gemini based on the updated UI parameters.
     """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return "Error: API Key is missing. Please enter a valid Gemini API Key."
+        
+    genai.configure(api_key=api_key)
+    
     prompt = f"""
     Act as an expert corporate lawyer. Generate a comprehensive, legally binding {doc_type}. 
     
@@ -34,11 +35,27 @@ def generate_legal_document(doc_type, parties_involved, terms_conditions, effect
     4. Output the pure document text starting directly with the document title. Do not include introductory conversational text.
     """
     
+    # 🔴 FIX: Disable Safety Filters for Legal Terminology
+    safety_settings = [
+        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+    ]
+    
     try:
-        # Utilizing Gemini 3.5 Flash for fast and accurate generation
         model = genai.GenerativeModel('gemini-3.5-flash') 
-        response = model.generate_content(prompt)
-        return response.text
+        # Pass the safety settings to the model
+        response = model.generate_content(prompt, safety_settings=safety_settings)
+        
+        # Safely extract text
+        try:
+            return response.text
+        except ValueError:
+            # If Gemini still blocks it, show the exact reason instead of crashing
+            reason = response.candidates[0].finish_reason.name if response.candidates else "Unknown"
+            return f"Error: Gemini blocked the response due to safety filters. Reason: {reason}"
+            
     except Exception as e:
         return f"Error generating document: {e}"
 
